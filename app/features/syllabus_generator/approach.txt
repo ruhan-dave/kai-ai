@@ -1,0 +1,24 @@
+1. define the user inputs and update the metadata.json file
+
+2. finish the system template in the tools.py (define rough outlines/structures for different sections)
+
+3. multiple file_types support (have a function or subprocess in a function that reads the pdf files from the user and accept multiple file types)
+
+target university instructors
+
+4. define a function that searches through the pdf files and queries from a vectorstore for customized info the user specifically wants in the syllabus 
+(see last point of User Stories in the Notion Guide and refer to task_5 from mission-quizify)
+
+5. * don't need too many functions for each section, but rather one function that uses the system_template to generate the response, which should give detailed sections based on predefined structures (from the system_template)
+6. test cases in the tests file that examines the response from LLM.
+
+Uzair+Herry: methods for PDFs and other file types. Queries the vectorstore to generate custom responses for what the user wants in the syllabus
+Parini+Dave: schedule and office_hours and other templates, create and customize the vectorstore.
+
+PDF (and other types of files handling) —> chunk and store —> pass the info into the LLM for a response (pass through the system template should be specific) —> return
+
+update the other member.  
+
+Ask on an AI session about the structure. 
+
+message about the next meeting time (idea: Friday)

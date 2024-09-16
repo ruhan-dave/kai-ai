@@ -1,0 +1,29 @@
+{
+    "inputs": [
+        {
+            "label": "Topic",
+            "name": "topic",
+            "type": "text"
+        },
+        {
+            "label": "Year Level (100-400) or Grade Level (1-12)", 
+            "name": "sections",
+            "type": "number"
+        },
+        {
+            "label": "Upload PDF files",
+            "name": "files",
+            "type": "file"
+        },
+        {
+            "label": "Number of pages",
+            "name": "pages",
+            "type": "number"
+        },
+        {
+            "label": "Name syllabus sections",
+            "name": "names",
+            "type": "list"
+        }       
+    ]
+}
