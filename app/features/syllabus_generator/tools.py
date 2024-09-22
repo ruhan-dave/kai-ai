@@ -1,146 +1,164 @@
+from typing import List, Tuple, Dict, Any
+from io import BytesIO
+from fastapi import UploadFile
+from pypdf import PdfReader
+from urllib.parse import urlparse
+import requests
+import os
+import json
+import time
 
-    """
-5 different prompts for 5 sections. Define each template by 
-    """
-class SyllabusBuilder:
-    def __init__(self, num_questions, subject, pages, sections, user_type):
-        self.num_questions = num_questions
-        self.subject = subject
-        self.pages = pages 
-        self.sections = sections
-        self.user_type = user_type # Are you a student or an educator? the user input will then be passed on to the llm
-        self.system_template = """
-            You are a syllabus generator on the subject: {subject} with total {pages} pages and {sections} sections.
-            You then customize the content accoding to the {user_type}.
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_chroma import Chroma
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnablePassthrough, RunnableParallel
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.pydantic_v1 import BaseModel, Field
+from langchain_google_genai import GoogleGenerativeAI
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-            Follow the instructions to create a syllabus:
-            1. Generate a title based on the topic provided and context as key "title"
-            2. Provide a welcome statement to the course and generate 2 sentences about the main objectives 
-            of the course and what skills the class will gain as key "summary".
-            3. Provide a few paragraphs for each section from the list of sections as key "content". 
-            Clearly separate the "content" for each section and ensure relevance to each section.
-            
-            You must respond as a JSON object with the following structure:
-            {{
-                "subject": "<subject>",
-                "summary": "<summary>",
-                "learning_objectives": [
-                    {{"key": "<section-1>", "value": "<content_1>"}},
-                    {{"key": "<section-2>", "value": "<content>"}},
-                    {{"key": "<section-3>", "value": "<content>"}},
-                    {{"key": "<section>", "value": "<content>"}}
-                ],
-                "grading_policies": # ie: generate a dictionary of grades with ranges of scores represetned as percentages,
-                "course_expections": # generate a paragraph that shows what the educator expects of the class, such as ethics, code of conduct, classroom policies, etc based on the pdf given by the user. ,
-                "office_hours": # generate a JSON file:  {{"office_hours_insturctor": "<hours_instructors>", "office_hours_ta": "<hours_ta>"}}, where ...
-                "schedule": # generate a dictionary of weeks to course content mapping, few sentences that describes course content and progress for that week
-            }}
+from app.services.logger import setup_logger
+from app.services.tool_registry import ToolFile
+from app.api.error_utilities import LoaderError
 
-            For the "body" section of the JSON object above, You should continue to 
-            generate "content" until the number of pages equal to {pages} the number of sections equal to {sections}.
-            """
+logger = setup_logger(__name__)
+
+def transform_json_dict(input_data: dict) -> dict:
+    # Validate and parse the input data to ensure it matches the QuizQuestion schema
+    syllabus = Syllabus(**input_data)
+
+    # Transform the choices list into a dictionary
+    transformed_grading_policies = {grading_policies.key: grading_policies.value for grading_policies in syllabus.grading_policies}
+    transformed_schedule = {schedule.key: schedule.value for schedule in syllabus.schedule}
+
+    # Create the transformed structure
+    transformed_data = {
+        "subject": syllabus.subject,
+        "summary": syllabus.summary,
+        "learning_objectives": syllabus.learning_objectives,
+        "grading_policies": transformed_grading_policies,
+        "course_expectations": syllabus.course_expectations,
+        "office_hours": syllabus.office_hours,
+        "schedule": transformed_schedule
+    }
+
+    return transformed_data
+
+def read_text_file(file_path):
+    # Get the directory containing the script file
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Combine the script directory with the relative file path
+    absolute_file_path = os.path.join(script_dir, file_path)
     
-        def init_llm(self): """
+    with open(absolute_file_path, 'r') as file:
+        return file.read()
+
+class SyllabusBuilder:
+    def __init__(self, vectorstore, subject, prompt=None, model=None, parser=None, verbose=False):
+        default_config = {
+            "model": GoogleGenerativeAI(model="gemini-1.0-pro"),
+            "parser": JsonOutputParser(pydantic_object=Syllabus),
+            "prompt": read_text_file("prompt/syllabus-prompt.txt")
+        }
+
+        self.prompt = prompt or default_config["prompt"]
+        self.model = model or default_config["model"]
+        self.parser = parser or default_config["parser"]
         
-        Task: Initialize the Large Language Model (LLM) for quiz question generation.
-
-        Overview:
-        This method prepares the LLM for generating quiz questions by configuring essential parameters such as the model name, temperature, and maximum output tokens. The LLM will be used later to generate quiz questions based on the provided topic and context retrieved from the vectorstore.
-
-        Steps:
-        1. Set the LLM's model name to "gemini-pro" 
-        2. Configure the 'temperature' parameter to control the randomness of the output. A lower temperature results in more deterministic outputs.
-        3. Specify 'max_output_tokens' to limit the length of the generated text.
-        4. Initialize the LLM with the specified parameters to be ready for generating quiz questions.
-
-        Implementation:
-        - Use the VertexAI class to create an instance of the LLM with the specified configurations.
-        - Assign the created LLM instance to the 'self.llm' attribute for later use in question generation.
-
-        Note: Ensure you have appropriate access or API keys if required by the model or platform.
-        """
-        self.llm = VertexAI(
-            ############# YOUR CODE HERE ############
-            model_name="gemini-pro",
-            temperature = 1.0,
-            max_output_tokens = 50
-        )
-    def generate_gradings(self):
-
-    def generate_course_expections(sef):
-
-    def
-
-
-    def generate_syllabus_with_vectorstore(self):
-        """
-        Task: Generate a quiz question using the topic provided and context from the vectorstore.
-
-        Overview:
-        This method leverages the vectorstore to retrieve relevant context for the quiz topic, then utilizes the LLM to generate a structured quiz question in JSON format. The process involves retrieving documents, creating a prompt, and invoking the LLM to generate a question.
-
-        Prerequisites:
-        - Ensure the LLM has been initialized using 'init_llm'.
-        - A vectorstore must be provided and accessible via 'self.vectorstore'.
-
-        Steps:
-        1. Verify the LLM and vectorstore are initialized and available.
-        2. Retrieve relevant documents or context for the quiz topic from the vectorstore.
-        3. Format the retrieved context and the quiz topic into a structured prompt using the system template.
-        4. Invoke the LLM with the formatted prompt to generate a quiz question.
-        5. Return the generated question in the specified JSON structure.
-
-        Implementation:
-        - Utilize 'RunnableParallel' and 'RunnablePassthrough' to create a chain that integrates document retrieval and topic processing.
-        - Format the system template with the topic and retrieved context to create a comprehensive prompt for the LLM.
-        - Use the LLM to generate a quiz question based on the prompt and return the structured response.
-
-        Note: Handle cases where the vectorstore is not provided by raising a ValueError.
-        """
-        ############# YOUR CODE HERE ############
-        # Initialize the LLM from the 'init_llm' method if not already initialized
-        self.init_llm()
-        # Raise an error if the vectorstore is not initialized on the class
-        if not self.vectorstore:
-            raise ValueError("The vectorstore is not initialized")
-        ############# YOUR CODE HERE ############
+        self.vectorstore = vectorstore
+        self.subject = subject
+        self.verbose = verbose
         
-        from langchain_core.runnables import RunnablePassthrough, RunnableParallel
-
-        ############# YOUR CODE HERE ############
-        # Enable a Retriever using the as_retriever() method on the VectorStore object
-        # HINT: Use the vectorstore as the retriever initialized on the class
-        ############# YOUR CODE HERE ############
-        retriever = self.vectorstore.db.as_retriever()
-        
-        ############# YOUR CODE HERE ############
-        # Use the system template to create a PromptTemplate
-        # HINT: Use the .from_template method on the PromptTemplate class and pass in the system template
-        ############# YOUR CODE HERE ############
-        
-        prompt_template = PromptTemplate.from_template(self.system_template)
-
-        # RunnableParallel allows Retriever to get relevant documents
-        # RunnablePassthrough allows chain.invoke to send self.topic to LLM
-        setup_and_retrieval = RunnableParallel(
-            {"context": retriever, "topic": RunnablePassthrough()}
+        if vectorstore is None: raise ValueError("Vectorstore must be provided")
+        if subject is None: raise ValueError("Subject must be provided")
+    
+    def compile(self):
+        # Return the chain
+        prompt = PromptTemplate(
+            template=self.prompt,
+            input_variables=["subject"],
+            partial_variables={"format_instructions": self.parser.get_format_instructions()}
         )
         
-        ############# YOUR CODE HERE ############
-        # Create a chain with the Retriever, PromptTemplate, and LLM
-        # HINT: chain = RETRIEVER | PROMPT | LLM 
-        ############# YOUR CODE HERE ############
-        # think the 1st argument should be setup_and_retrieval, not just retriever
-        chain = setup_and_retrieval | prompt_template | self.llm
-        # Invoke the chain with the topic as input
-        response = chain.invoke(self.topic)
+        retriever = self.vectorstore.as_retriever()
+        
+        runner = RunnableParallel(
+            {"context": retriever, "subject": RunnablePassthrough()}
+        )
+        
+        chain = runner | prompt | self.model | self.parser
+        
+        if self.verbose: logger.info(f"Chain compilation complete")
+        
+        return chain
+    
+    def validate_response(self, response: Dict) -> bool:
+        try:
+            # Assuming the response is already a dictionary
+            if isinstance(response, dict):
+                if 'subject' in response and 'summary' in response and 'learning_objectives' in response and 'grading_policies' in response and 'course_expectations' in response and 'office_hours' in response and 'schedule' in response:
+                    grading_policies = response['grading_policies']
+                    schedule = response['schedule']
+                    if isinstance(grading_policies, dict) and isinstance(schedule, dict):
+                        for key, value in grading_policies.items():
+                            if not isinstance(key, str) or not isinstance(value, str):
+                                return False
+                        for key, value in schedule.items():
+                            if not isinstance(key, str) or not isinstance(value, str):
+                                return False
+                        return True
+            return False
+        except TypeError as e:
+            if self.verbose:
+                logger.error(f"TypeError during response validation: {e}")
+            return False
+
+    def format_grading_policies(self, grading_policies: Dict[str, str]) -> List[Dict[str, str]]:
+        return [{"key": k, "value": v} for k, v in grading_policies.items()]
+    
+    def format_schedule(self, schedule: Dict[str, str]) -> List[Dict[str, str]]:
+        return [{"key": k, "value": v} for k, v in schedule.items()]
+
+    def create_questions(self) -> List[Dict]:
+        if self.verbose: logger.info(f"Creating syllabus")
+        
+        chain = self.compile()
+
+        attempts = 0
+        max_attempts = 5  # Allow for more attempts to generate questions
+
+        while attempts < max_attempts:
+            response = chain.invoke(self.subject)
+            if self.verbose:
+                logger.info(f"Generated response attempt {attempts + 1}: {response}")
+
+            response = transform_json_dict(response)
+            # Directly check if the response format is valid
+            if self.validate_response(response):
+                response["grading_policies"] = self.format_grading_policies(response["grading_policies"])
+                response["schedule"] = self.format_schedule(response["schedule"])
+                if self.verbose:
+                    logger.info(f"Valid syllabus generated: {response}")
+            else:
+                if self.verbose:
+                    logger.warning(f"Invalid response format. Attempt {attempts + 1} of {max_attempts}")
+            
+            # Move to the next attempt regardless of success to ensure progress
+            attempts += 1
+        
+        if self.verbose: logger.info(f"Deleting vectorstore")
+        self.vectorstore.delete_collection()
+        
+        # Return the list of questions
         return response
 
-class RAGpipeline:
-    def __init__(self, query, vectordb, verbose=False):
-        self.vectordb = vectordb
-
-class Vectordb:
-    def __init__(self, embeddings):
-        self.embeddings = embeddings
-        
+class Syllabus(BaseModel):
+    subject: str = Field(description="The subject of the course for which the syllabus is designed")
+    summary: str = Field(description="A summary of the generated syllabus")
+    learning_objectives: str = Field(description="Main objectives of the course and skills students will gain from the course")
+    grading_policies: Dict[str, str] = Field(description="a dictionary with range of numerical grades as keys and letter grades as values")
+    course_expectations: str = Field("A paragraph that shows what the educator expects of the class, such as ethics, code of conduct, classroom policies, etc., based on the PDF file given by the user")
+    office_hours: str = Field("Office hours of the instructor and teaching assistants")
+    schedule: Dict[str, str] = Field(description="A dictionary with each week of course as keys and respective weekly course contents as values")
